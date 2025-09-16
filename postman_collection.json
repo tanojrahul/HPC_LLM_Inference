@@ -1,0 +1,224 @@
+{
+    "info": {
+        "name": "Local LLM Inference API",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_postman_id": "9c9a7a5a-3f1d-4e62-bf60-2a3727371b5b"
+    },
+    "item": [
+        {
+            "name": "Health - Liveness",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{baseUrl}}/healthz",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "healthz"
+                    ]
+                }
+            },
+            "event": [
+                {
+                    "listen": "prerequest",
+                    "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                            "// Pre-request: set dynamic timestamp and ensure baseUrl",
+                            "pm.collectionVariables.set('ts', Date.now());",
+                            "if (!pm.collectionVariables.get('baseUrl')) { pm.collectionVariables.set('baseUrl', 'http://127.0.0.1:8000'); }",
+                            "// Note: pm.response is not available in pre-request scripts."
+                        ]
+                    }
+                },
+                {
+                    "listen": "test",
+                    "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                            "const j = pm.response.json();",
+                            "pm.test('Status 200', function(){ pm.response.to.have.status(200); });",
+                            "pm.test('Alive', function(){ pm.expect(j.status).to.eql('alive'); });",
+                            "pm.test('Fast', function(){ pm.expect(pm.response.responseTime).to.be.below(3000); });"
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Health - Readiness",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{baseUrl}}/readyz",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "readyz"
+                    ]
+                }
+            },
+            "event": [
+                {
+                    "listen": "prerequest",
+                    "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                            "// Ensure baseUrl is set",
+                            "if (!pm.collectionVariables.get('baseUrl')) { pm.collectionVariables.set('baseUrl', 'http://127.0.0.1:8000'); }",
+                            "// Note: Tests belong in post-response scripts."
+                        ]
+                    }
+                },
+                {
+                    "listen": "test",
+                    "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                            "const j = pm.response.json();",
+                            "pm.test('Status 200 or 503', function(){ pm.expect([200,503]).to.include(pm.response.code); });",
+                            "pm.test('Has status field', function(){ pm.expect(j).to.have.property('status'); });"
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Chat Completions",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{apiKey}}",
+                        "type": "text"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "url": {
+                    "raw": "{{baseUrl}}/v1/chat/completions",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "v1",
+                        "chat",
+                        "completions"
+                    ]
+                },
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Say hello in English\" }\n  ],\n  \"max_tokens\": 64,\n  \"temperature\": 0.7\n}"
+                }
+            },
+            "event": [
+                {
+                    "listen": "prerequest",
+                    "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                            "// Ensure baseUrl and apiKey variables exist",
+                            "if (!pm.collectionVariables.get('baseUrl')) { pm.collectionVariables.set('baseUrl', 'http://127.0.0.1:8000'); }",
+                            "if (!pm.collectionVariables.get('apiKey')) { pm.collectionVariables.set('apiKey', 'changeme'); }",
+                            "// Note: Response object not available here."
+                        ]
+                    }
+                },
+                {
+                    "listen": "test",
+                    "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                            "const j = pm.response.json();",
+                            "pm.test('Status 200', function(){ pm.response.to.have.status(200); });",
+                            "pm.test('Has choices', function(){ pm.expect(j.choices).to.be.an('array').that.is.not.empty; });",
+                            "pm.test('Has assistant message', function(){ pm.expect(j.choices[0].message.content).to.be.a('string').that.is.not.empty; });"
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Audio Transcriptions",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{apiKey}}",
+                        "type": "text"
+                    }
+                ],
+                "url": {
+                    "raw": "{{baseUrl}}/v1/audio/transcriptions",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "v1",
+                        "audio",
+                        "transcriptions"
+                    ]
+                },
+                "body": {
+                    "mode": "formdata",
+                    "formdata": [
+                        {
+                            "key": "file",
+                            "type": "file",
+                            "src": "C:/path/to/audio.wav"
+                        },
+                        {
+                            "key": "language",
+                            "type": "text",
+                            "value": "en"
+                        }
+                    ]
+                }
+            },
+            "event": [
+                {
+                    "listen": "prerequest",
+                    "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                            "// Ensure vars",
+                            "if (!pm.collectionVariables.get('baseUrl')) { pm.collectionVariables.set('baseUrl', 'http://127.0.0.1:8000'); }",
+                            "if (!pm.collectionVariables.get('apiKey')) { pm.collectionVariables.set('apiKey', 'changeme'); }",
+                            "// Note: No tests here."
+                        ]
+                    }
+                },
+                {
+                    "listen": "test",
+                    "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                            "const j = pm.response.json();",
+                            "pm.test('Status 200', function(){ pm.response.to.have.status(200); });",
+                            "pm.test('Has text', function(){ pm.expect(j.text).to.be.a('string'); });",
+                            "pm.test('Includes language', function(){ pm.expect(j).to.have.property('language'); });"
+                        ]
+                    }
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://127.0.0.1:8000"
+        },
+        {
+            "key": "apiKey",
+            "value": "changeme"
+        }
+    ]
+}
