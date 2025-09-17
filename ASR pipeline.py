@@ -1,106 +1,77 @@
-from transformers import pipeline
-
-pipe = pipeline("text-generation", model="Qwen/Qwen3-0.6B")
-messages = [
-    {"role": "user", "content": "Who are you?"},
-]
-pipe(messages)
-from transformers import AutoTokenizer, AutoModelForCausalLM
-
-tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
-model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B")
-messages = [
-    {"role": "user", "content": "Who are you?"},
-]
-inputs = tokenizer.apply_chat_template(
-  messages,
-  add_generation_prompt=True,
-  tokenize=True,
-  return_dict=True,
-  return_tensors="pt",
-).to(model.device)
-outputs = model.generate(**inputs, max_new_tokens=40)
-print(tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:]))
 import os
 import re
+import sys
+from pathlib import Path
+from typing import List, Dict
+
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
-from gtts import gTTS
 from langdetect import detect
+
+MODELS_DIR = Path(os.environ.get("MODELS_DIR", "./models")).resolve()
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("HF_HOME", str(MODELS_DIR))
+os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(MODELS_DIR))
+os.environ.setdefault("TRANSFORMERS_CACHE", str(MODELS_DIR))
 
 ASR_MODEL = "openai/whisper-small"
 LLM_MODEL = "Qwen/Qwen3-0.6B"
 
+
 def mask_pii(text: str) -> str:
-    text = re.sub(r'\b\d{10}\b', '[PHONE_NUMBER]', text)
-    text = re.sub(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '[EMAIL]', text)
+    text = re.sub(r"\b\d{10}\b", "[PHONE_NUMBER]", text)
+    text = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[EMAIL]", text)
     return text
 
-def build_prompt(user_text: str, lang_code: str) -> str:
-    system_instruction = f"You are a helpful assistant. Always respond *ONLY* in {lang_code}."
-    return f"### System:\n{system_instruction}\n\n### User:\n{user_text}\n\n### Assistant:\n"
 
 def clean_output(output_text: str) -> str:
-  """Removes text within <think> ... </think> tags using regex.
-
-  Args:
-    output_text: The string containing the model's output.
-
-  Returns:
-    The cleaned string with the text within <think> ... </think> tags removed.
-  """
-  cleaned_text = re.sub(r'<think>.*?</think>', '', output_text, flags=re.DOTALL)
-  return cleaned_text
-
-print("Loading ASR...")
-asr_pipe = pipeline("automatic-speech-recognition", model=ASR_MODEL)
-
-print("Loading Qwen locally...")
-tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL, trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained(LLM_MODEL, trust_remote_code=True, device_map="auto")
-
-gen_pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, device_map="auto")
-
-def audio_to_llm_response(audio_file_path: str, output_tts_file="final_response.mp3"):
-    
-    transcription = asr_pipe(audio_file_path)["text"]
-    print("ASR Output:", transcription)
+    cleaned_text = re.sub(r"<think>.*?</think>", "", output_text, flags=re.DOTALL)
+    return cleaned_text.strip()
 
 
+def llm_generate_chat(tokenizer: AutoTokenizer, model: AutoModelForCausalLM, messages: List[Dict], max_new_tokens: int = 256, temperature: float = 0.7) -> str:
+    inputs = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=True,
+        return_dict=True,
+        return_tensors="pt",
+    ).to(model.device)
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        do_sample=True,
+        temperature=temperature,
+        pad_token_id=tokenizer.eos_token_id,
+    )
+    generated = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
+    return clean_output(generated)
+
+
+def audio_to_llm_response(audio_file_path: str) -> Dict[str, str]:
+    asr = pipeline("automatic-speech-recognition", model=ASR_MODEL)
+    tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(LLM_MODEL, trust_remote_code=True, device_map="auto")
+
+    transcription = asr(audio_file_path).get("text", "").strip()
     safe_text = mask_pii(transcription)
-    print("Anonymized Text:", safe_text)
-
-
     try:
-        lang_code = detect(safe_text)
-    except:
+        lang_code = detect(safe_text) or "en"
+    except Exception:
         lang_code = "en"
-    print("Detected Language:", lang_code)
+
+    messages = [
+        {"role": "system", "content": f"You are a helpful assistant. Always respond ONLY in {lang_code}."},
+        {"role": "user", "content": safe_text or "Hello"},
+    ]
+    reply = llm_generate_chat(tokenizer, model, messages, max_new_tokens=256, temperature=0.7)
+    return {"transcription": transcription, "safe_text": safe_text, "llm_reply": reply}
 
 
-    prompt = build_prompt(safe_text, lang_code)
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python ASR pipeline.py <audio_file_path>")
+        sys.exit(1)
+    audio_path = sys.argv[1]
+    out = audio_to_llm_response(audio_path)
+    print("Done:", out)
 
-
-    output = gen_pipe(prompt, max_new_tokens=256, do_sample=True, temperature=0.7)[0]["generated_text"]
-    llm_reply = output[len(prompt):].strip()
-    print("LLM Reply:", llm_reply)
-
-
-    cleaned_llm_reply = clean_output(llm_reply)
-    print("Cleaned LLM Reply:", cleaned_llm_reply)
-
-    try:
-        tts = gTTS(text=cleaned_llm_reply, lang=lang_code)
-        tts.save(output_tts_file)
-        print(f"Final safe speech saved as {output_tts_file}")
-    except Exception as e:
-        print("TTS failed:", e)
-        with open(output_tts_file + ".txt", "w", encoding="utf-8") as f:
-            f.write(cleaned_llm_reply)
-
-    return {"transcription": transcription, "safe_text": safe_text, "llm_reply": cleaned_llm_reply}
-
-
-if _name_ == "_main_":
-    audio_file_path = "/content/hindi (1).mp3"
-    result = audio_to_llm_response(audio_file_path, "safe_reply.mp3")
-    print("Done:", result)

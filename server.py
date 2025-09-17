@@ -6,7 +6,14 @@ from typing import Any, Dict
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 
-from model import ensure_loaded, chat_with_audio, ENGINES, build_prompt, clean_output
+from model import (
+	ensure_loaded,
+	chat_with_audio,
+	chat_with_text,
+	ENGINES,
+	build_prompt,
+	clean_output,
+)
 
 
 API_KEY = os.environ.get("API_KEY", "changeme")
@@ -88,6 +95,22 @@ def chat_completions():
 		],
 	}
 	return jsonify(resp)
+
+
+# 1) text -> text
+@app.route("/v1/text", methods=["POST"])
+def text_to_text():
+	ensure_loaded()
+	data: Dict[str, Any] = request.get_json(force=True, silent=True) or {}
+	user_text = data.get("text") or data.get("prompt") or "Hello"
+	lang = data.get("language")
+	max_tokens = int(data.get("max_tokens", 256))
+	temperature = float(data.get("temperature", 0.7))
+	result = chat_with_text(user_text, lang_code=lang, max_new_tokens=max_tokens, temperature=temperature)
+	return jsonify(result)
+
+
+# 2) and 3) TTS endpoints removed: server supports Whisper (ASR) + Qwen (LLM) only
 
 
 @app.route("/v1/audio/transcriptions", methods=["POST"])

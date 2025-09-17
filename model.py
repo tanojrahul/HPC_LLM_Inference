@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import re
 from pathlib import Path
 from typing import Dict, Any
@@ -8,6 +10,7 @@ from transformers import (
 	AutoTokenizer,
 	AutoModelForCausalLM,
 )
+from io import BytesIO
 
 
 # Ensure all models/cache live under a local ./models directory unless overridden
@@ -61,6 +64,7 @@ class InferenceEngines:
 			"text-generation", model=self.model, tokenizer=self.tokenizer, device_map="auto"
 		)
 
+
 	def transcribe_audio(self, audio_file_path: str) -> str:
 		result = self.asr(audio_file_path)
 		return result.get("text", "")
@@ -71,6 +75,7 @@ class InferenceEngines:
 		)[0]["generated_text"]
 		# Remove the prompt prefix
 		return output[len(prompt) :].strip()
+
 
 
 ENGINES = InferenceEngines()
@@ -102,4 +107,24 @@ def chat_with_audio(audio_path: str, lang_code: str | None = None) -> Dict[str, 
 		"safe_text": safe_text,
 		"language": lang_code,
 	}
+
+
+def chat_with_text(user_text: str, lang_code: str | None = None, max_new_tokens: int = 256, temperature: float = 0.7) -> Dict[str, Any]:
+	from langdetect import detect
+
+	engines = ensure_loaded()
+	safe_text = mask_pii(user_text or "")
+	if not lang_code:
+		try:
+			lang_code = detect(safe_text) or "en"
+		except Exception:
+			lang_code = "en"
+	prompt = build_prompt(safe_text, lang_code)
+	raw_reply = engines.generate(prompt, max_new_tokens=max_new_tokens, temperature=temperature)
+	cleaned = clean_output(raw_reply)
+	return {"text": cleaned, "safe_text": safe_text, "language": lang_code}
+
+
+def tts_synthesize(text: str, lang_code: str = "en") -> BytesIO:  # deprecated
+	raise NotImplementedError("TTS disabled: using Whisper (ASR) and Qwen (LLM) only.")
 

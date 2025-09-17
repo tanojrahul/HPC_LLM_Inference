@@ -48,6 +48,43 @@
             ]
         },
         {
+            "name": "Text -> Text",
+            "request": {
+                "method": "POST",
+                "header": [
+                    { "key": "Authorization", "value": "Bearer {{apiKey}}", "type": "text" },
+                    { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": {
+                    "raw": "{{baseUrl}}/v1/text",
+                    "host": ["{{baseUrl}}"],
+                    "path": ["v1", "text"]
+                },
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"text\": \"Summarize: Whisper is ASR and Qwen is LLM.\",\n  \"max_tokens\": 64\n}"
+                }
+            },
+            "event": [
+                {
+                    "listen": "prerequest",
+                    "script": {"type": "text/javascript", "exec": [
+                        "if (!pm.collectionVariables.get('baseUrl')) { pm.collectionVariables.set('baseUrl', 'http://127.0.0.1:8000'); }",
+                        "if (!pm.collectionVariables.get('apiKey')) { pm.collectionVariables.set('apiKey', 'changeme'); }",
+                        "// Pre-request only."
+                    ]}
+                },
+                {
+                    "listen": "test",
+                    "script": {"type": "text/javascript", "exec": [
+                        "const j = pm.response.json();",
+                        "pm.test('Status 200', function(){ pm.response.to.have.status(200); });",
+                        "pm.test('Has text field', function(){ pm.expect(j.text).to.be.a('string').that.is.not.empty; });"
+                    ]}
+                }
+            ]
+        },
+        {   
             "name": "Health - Readiness",
             "request": {
                 "method": "GET",
